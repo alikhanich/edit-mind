@@ -68,7 +68,7 @@ Edit Mind uses Docker Compose to run everything in containers.
 
 I built the self-hosted version because a lot of people asked for it. I built the desktop app because I got couple of emails and calls people doesn't wanna run this as server. The self hosted version, It's free. It's not going anywhere. The desktop app is for the people who want it to just work on their Mac or Windows or the ones with Apple chips and wanna utilize Apple GPU because using Docker, we cannot utilize that.
  
-> **[Preorder the Desktop App →](https://shop.edit-mind.com/checkout/buy/9f18a6f0-b437-47ec-b2fa-b71216abcedd)**
+> **[Preorder the Desktop App →](https://buy.polar.sh/polar_cl_mZRh64wC3HUFLZpzdJqdVOJkf6PyhhQWGE1EN1joFH5)**
 >
 > Early bird pricing · Lifetime license · one year of updates included · 14-day refund guarantee (starting when the app ships)
 > The desktop app will be delivered by email when the app ships.
