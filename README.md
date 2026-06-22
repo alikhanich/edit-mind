@@ -85,6 +85,16 @@ I built the self-hosted version because a lot of people asked for it. I built th
 *   [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running.
 *   That's it! Everything else runs in containers.
 
+### Easy Mode:
+
+You can install and configure this project using this bash script:
+
+```bash
+curl -sSL https://get.edit-mind.com | sh
+```
+
+### Advanced Mode:
+
 ### 1. Project Setup
 ```bash
 mkdir edit-mind
