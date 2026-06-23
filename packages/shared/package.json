@@ -1,6 +1,6 @@
 {
   "name": "shared",
-  "version": "0.23.0",
+  "version": "0.24.0-beta",
   "description": "AI-Powered Video Indexing and Search",
   "type": "module",
   "private": false,
