@@ -580,7 +580,7 @@ jobs:
               type=semver,pattern={{version}}
             flavor: |
               latest=false
-              suffix=-beta-gpu,onlatest=false
+              suffix=-gpu,onlatest=false
   
         - name: Build and push beta GPU image
           id: push
