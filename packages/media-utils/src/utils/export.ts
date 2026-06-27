@@ -28,41 +28,39 @@ export const trimVideoScenes = async (scenes: ExportedScene[], tempExportDir: st
 
     const encodingArgs = buildEncodingArgs({ encoder: 'h264' })
 
-    const ffmpegArgs = [
-      '-ss',
-      scene.startTime.toString(),
-      '-i',
-      scene.source,
-      '-to',
-      scene.endTime.toString(),
-      ...encodingArgs,
-      '-y',
-      clipPath,
+    const buildArgs = (args: string[]) => [
+      '-ss', scene.startTime.toString(),
+      '-i', scene.source,
+      '-to', scene.endTime.toString(),
+      ...args,
+      '-y', clipPath,
     ]
 
+    const runFFmpeg = (args: string[]): Promise<{ code: number; stderr: string }> =>
+      spawnFFmpeg(args).then(
+        (proc) =>
+          new Promise((resolve, reject) => {
+            let stderr = ''
+            proc.stderr?.on('data', (d) => { stderr += d.toString() })
+            proc.on('close', (code) => resolve({ code: code ?? -1, stderr }))
+            proc.on('error', (err) => reject(new Error(`Failed to spawn FFmpeg: ${err.message}`)))
+          })
+      )
+
     try {
-      const ffmpegProcess = await spawnFFmpeg(ffmpegArgs)
+      let result = await runFFmpeg(buildArgs(encodingArgs))
 
-      await new Promise<void>((resolve, reject) => {
-        let stderr = ''
+      if (result.code !== 0 && USE_FFMPEG_GPU) {
+        logger.warn(`GPU encoding failed for scene ${i + 1}, retrying with CPU encoder`)
+        const cpuArgs = buildEncodingArgs({ encoder: 'h264', forceGPU: false })
+        result = await runFFmpeg(buildArgs(cpuArgs))
+      }
 
-        ffmpegProcess.stderr?.on('data', (data) => {
-          stderr += data.toString()
-        })
+      if (result.code !== 0) {
+        throw new Error(`FFmpeg exited with code ${result.code}: ${result.stderr}`)
+      }
 
-        ffmpegProcess.on('close', (code) => {
-          if (code === 0) {
-            logger.info(`Trimmed scene ${i + 1}/${scenes.length}: ${clipPath}`)
-            resolve()
-          } else {
-            reject(new Error(`FFmpeg exited with code ${code}: ${stderr}`))
-          }
-        })
-
-        ffmpegProcess.on('error', (err) => {
-          reject(new Error(`Failed to spawn FFmpeg: ${err.message}`))
-        })
-      })
+      logger.info(`Trimmed scene ${i + 1}/${scenes.length}: ${clipPath}`)
     } catch (error) {
       logger.error({ error }, `Failed to trim scene ${i + 1}`)
       throw error

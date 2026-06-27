@@ -164,11 +164,36 @@ const processClip = async (
   process = await spawnFFmpeg(argsWithSilentAudio)
   result = await handleFFmpegProcess(process, `clip processing retry (${scene.source})`)
 
-  if (result.code !== 0) {
-    throw new Error(`Failed to process clip from ${scene.source}: ${result.stderr || 'Unknown error'}`)
+  if (result.code === 0) {
+    logger.info(`Processed clip with silent audio: ${clipPath} (GPU: ${USE_FFMPEG_GPU})`)
+    return
   }
 
-  logger.info(`Processed clip with silent audio: ${clipPath} (GPU: ${USE_FFMPEG_GPU})`)
+  if (USE_FFMPEG_GPU) {
+    logger.warn(`GPU encoding failed for ${scene.source}, retrying with CPU encoder`)
+    const cpuEncodingArgs = buildEncodingArgs({ encoder: 'h264', forceGPU: false })
+    const argsWithCPU = [
+      '-ss', scene.startTime.toString(),
+      '-to', scene.endTime.toString(),
+      '-i', scene.source,
+      '-f', 'lavfi',
+      '-i', 'anullsrc=r=48000:cl=stereo',
+      '-vf', videoFilter,
+      '-map', '0:v:0',
+      '-map', '1:a:0',
+      '-shortest',
+      ...cpuEncodingArgs,
+      '-y', clipPath,
+    ]
+    process = await spawnFFmpeg(argsWithCPU)
+    result = await handleFFmpegProcess(process, `clip processing CPU fallback (${scene.source})`)
+    if (result.code === 0) {
+      logger.info(`Processed clip with CPU fallback: ${clipPath}`)
+      return
+    }
+  }
+
+  throw new Error(`Failed to process clip from ${scene.source}: ${result.stderr || 'Unknown error'}`)
 }
 
 const createFileList = (clipPaths: string[], fileListPath: string): void => {

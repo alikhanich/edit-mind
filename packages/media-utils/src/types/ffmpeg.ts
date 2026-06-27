@@ -34,4 +34,5 @@ export interface FFmpegGPUOptions {
   encoder?: 'h264' | 'hevc'
   preset?: string
   useGPUScaling?: boolean
+  forceGPU?: boolean
 }

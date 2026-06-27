@@ -11,8 +11,7 @@ export function getGPUDecodeArgs(options: FFmpegGPUOptions = {}): string[] {
 }
 
 export function getGPUEncoder(options: FFmpegGPUOptions = {}): { codec: string; extraArgs: string[] } {
-  if (!USE_FFMPEG_GPU) {
-    // Return CPU encoders
+  if (!USE_FFMPEG_GPU || options.forceGPU === false) {
     const codec = options.encoder === 'hevc' ? 'libx265' : 'libx264'
     return {
       codec,
