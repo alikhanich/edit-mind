@@ -1,6 +1,6 @@
 {
   "name": "media-utils",
-  "version": "0.24.0-beta",
+  "version": "0.30.0",
   "private": true,
   "license": "Edit Mind",
   "type": "module",

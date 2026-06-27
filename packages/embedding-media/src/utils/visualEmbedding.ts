@@ -1,7 +1,7 @@
 import { createVectorDbClient } from '@vector/services/client'
 import { VISUAL_BATCH_SIZE } from '@shared/constants/embedding'
 import { logger } from '@shared/services/logger'
-import { cleanupFrames, extractSceneFrames } from '@media-utils/utils/frame'
+import { existsSync } from 'fs'
 import { embedSceneFrames } from '../services'
 import type { Scene } from '@shared/types'
 import { sceneToVectorFormat } from '@vector/utils/shared'
@@ -24,34 +24,27 @@ export const embedVisualScenes = async (
       const batchNumber = i / VISUAL_BATCH_SIZE + 1
       logger.info(`Processing batch ${batchNumber}, scenes ${i} to ${i + batch.length - 1}`)
 
-      const visualEmbeddingsPromise = batch.map(async (scene) => {
-        try {
-          const startTime = Date.now()
-          const keyframes = await extractSceneFrames(scene.source, scene.startTime, scene.endTime, {
-            framesPerScene: 5,
-            format: 'jpg',
-            quality: 2,
-            maxWidth: 640,
-          })
-
-          const endTime = Date.now()
-
-          logger.info(`Frames extracted in ${(endTime - startTime) / 1000}s`)
-
-          const { metadata, id } = await sceneToVectorFormat(scene)
-
-          const embedding = await embedSceneFrames(keyframes)
-
-          await cleanupFrames(keyframes)
-
-          return { id, embedding, metadata, success: true }
-        } catch (error) {
-          logger.error(`Failed to process visual embedding for scene ${scene.id}: ${error}`)
-          return { id: scene.id, embedding: null, metadata: {}, success: false }
-        }
+      // Step 1: use pre-saved thumbnails from frame analysis — no ffmpeg extraction needed
+      const keyframesBatch = batch.map((scene) => {
+        const thumbnail = scene.thumbnailUrl
+        if (thumbnail && existsSync(thumbnail)) return [thumbnail]
+        return []
       })
 
-      const visualEmbeddingsResults = await Promise.all(visualEmbeddingsPromise)
+      // Step 2: embed sequentially — prevents competing GPU kernel launches across scenes
+      const visualEmbeddingsResults = []
+      for (let j = 0; j < batch.length; j++) {
+        const scene = batch[j]
+        const keyframes = keyframesBatch[j]
+        try {
+          const { metadata, id } = await sceneToVectorFormat(scene)
+          const embedding = keyframes.length > 0 ? await embedSceneFrames(keyframes) : null
+          visualEmbeddingsResults.push({ id, embedding, metadata, success: true })
+        } catch (error) {
+          logger.error(`Failed to process visual embedding for scene ${scene.id}: ${error}`)
+          visualEmbeddingsResults.push({ id: scene.id, embedding: null, metadata: {}, success: false })
+        }
+      }
 
       const validVisualEmbeddings = visualEmbeddingsResults.filter((r) => r.success && r.embedding)
 

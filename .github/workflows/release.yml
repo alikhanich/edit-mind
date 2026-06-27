@@ -28,7 +28,7 @@ env:
   NODE_VERSION: 22.20.0
   PNPM_VERSION: 10.32.1
   PYTHON_VERSION: 3.11
-  CUDA_VERSION: 13.2.1
+  CUDA_VERSION: 12.8.0
 
 jobs:
   build:
@@ -112,7 +112,7 @@ jobs:
             args: |
               NODE_VERSION=22.20.0
               PNPM_VERSION=10.32.1
-              CUDA_VERSION=13.2.1
+              CUDA_VERSION=12.8.0
               TARGET_BASE=base-gpu
 
           - name: ml
@@ -121,7 +121,7 @@ jobs:
             tag: latest-gpu
             args: |
               PYTHON_VERSION=3.11
-              CUDA_VERSION=13.2.1
+              CUDA_VERSION=12.8.0
               TARGET_BASE=base-gpu
 
     steps:
@@ -264,7 +264,7 @@ jobs:
             tag: latest
             args: |
               PYTHON_VERSION=3.11
-              CUDA_VERSION=13.2.1
+              CUDA_VERSION=12.8.0
 
           - name: web
             dockerfile: docker/Dockerfile.web
@@ -352,7 +352,7 @@ jobs:
             args: |
               NODE_VERSION=22.20.0
               PNPM_VERSION=10.32.1
-              CUDA_VERSION=13.2.1
+              CUDA_VERSION=12.8.0
               TARGET_BASE=base-gpu
 
           - name: ml
@@ -361,7 +361,7 @@ jobs:
             image_suffix: ml
             args: |
               PYTHON_VERSION=3.11
-              CUDA_VERSION=13.2.1
+              CUDA_VERSION=12.8.0
               TARGET_BASE=base-gpu
 
     steps:

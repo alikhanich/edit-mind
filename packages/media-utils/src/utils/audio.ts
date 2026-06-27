@@ -165,6 +165,67 @@ export const cleanupAudio = async (audioPath: string): Promise<void> => {
   }
 }
 
+export async function extractFullAudioRaw(videoPath: string, sampleRate: number = 48000): Promise<string> {
+  if (!existsSync(videoPath)) {
+    throw new Error(`Video file not found: ${videoPath}`)
+  }
+
+  const sessionId = randomBytes(8).toString('hex')
+  const audioDir = join(tmpdir(), 'edit-mind-audio', sessionId)
+  await mkdir(audioDir, { recursive: true })
+
+  const audioPath = join(audioDir, 'full_audio.f32le')
+
+  const args = [
+    '-hide_banner',
+    '-loglevel',
+    'error',
+    '-i',
+    videoPath,
+    '-vn',
+    '-map',
+    '0:a:0',
+    '-acodec',
+    'pcm_f32le',
+    '-ac',
+    '1',
+    '-ar',
+    sampleRate.toString(),
+    '-f',
+    'f32le',
+    '-y',
+    audioPath,
+  ]
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      spawnFFmpeg(args)
+        .then((ffmpeg) => {
+          let stderr = ''
+          ffmpeg.stderr?.on('data', (data) => { stderr += data.toString() })
+          ffmpeg.on('close', (code) => {
+            if (code === 0 && existsSync(audioPath)) resolve()
+            else reject(new Error(`FFmpeg full audio extraction failed with code ${code}: ${stderr}`))
+          })
+          ffmpeg.on('error', reject)
+        })
+        .catch(reject)
+    })
+  } catch (error) {
+    try {
+      if (existsSync(audioPath)) {
+        await unlink(audioPath)
+      }
+    } catch {
+      logger.warn(`Failed to cleanup audio file: ${audioPath}`)
+    }
+    throw error
+  }
+
+  logger.info(`Extracted full audio track to: ${audioPath}`)
+  return audioPath
+}
+
 export async function readAudio(audioPath: string, sampling_rate: number = 48000): Promise<Float32Array> {
   if (!existsSync(audioPath)) {
     throw new Error(`Audio file not found: ${audioPath}`)
