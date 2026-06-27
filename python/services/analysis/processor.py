@@ -17,6 +17,7 @@ class FrameProcessor:
 
     def __init__(self, config: AnalysisConfig):
         self.config = config
+        self._used_cuda = False
         self.metrics = {
             "video_open_time": 0.0,
             "frame_decode_time": 0.0,
@@ -24,7 +25,7 @@ class FrameProcessor:
             "frames_extracted": 0
         }
 
-    def _open_container(self, video_path: str):
+    def _open_container(self, video_path: str, force_cpu: bool = False):
         """Open video container with broad codec support. CUDA-accelerated where possible, CPU fallback."""
         start_open = time.time()
 
@@ -62,7 +63,9 @@ class FrameProcessor:
         codec_name = _detect_codec(video_path)
         logger.info(f"Detected video codec: {codec_name}")
 
-        if self.config.device == "cuda":
+        self._used_cuda = False
+
+        if self.config.device == "cuda" and not force_cpu:
             cuda_codec = CUDA_CODEC_MAP.get(codec_name)
             if cuda_codec:
                 try:
@@ -75,6 +78,7 @@ class FrameProcessor:
                         }
                     )
                     self.metrics["video_open_time"] += time.time() - start_open
+                    self._used_cuda = True
                     logger.info(f"Using CUDA acceleration: {cuda_codec}")
                     return container
                 except Exception as e:
@@ -194,7 +198,8 @@ class FrameProcessor:
             else:
                 FRAME_DECODE_TIMEOUT = 15
 
-                for i in range(total_sampled_frames):
+                i = 0
+                while i < total_sampled_frames:
                     if cancel_flag and cancel_flag.is_set():
                         logger.info(f"[{job_id}] Extraction cancelled at frame {i}/{total_sampled_frames}")
                         return
@@ -208,7 +213,18 @@ class FrameProcessor:
                         logger.warning(f"[{job_id}] Seek failed at {target_time_sec:.2f}s: {e}")
                         consecutive_failures += 1
                         if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                            if self._used_cuda:
+                                logger.warning(f"[{job_id}] CUDA decoder causing seek failures, reopening with CPU")
+                                container.close()
+                                container = self._open_container(video_path, force_cpu=True)
+                                stream = container.streams.video[0]
+                                stream.thread_type = "AUTO"
+                                stream.codec_context.skip_frame = "NONREF"
+                                consecutive_failures = 0
+                                i = 0
+                                continue
                             raise AnalysisError(f"Aborting: {MAX_CONSECUTIVE_FAILURES} consecutive seek failures")
+                        i += 1
                         continue
 
                     frame_found = False
@@ -269,11 +285,24 @@ class FrameProcessor:
                         logger.warning(f"Decode error at {target_time_sec:.2f}s: {e}")
                         consecutive_failures += 1
                         if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                            if self._used_cuda:
+                                logger.warning(f"[{job_id}] CUDA decoder causing decode failures, reopening with CPU")
+                                container.close()
+                                container = self._open_container(video_path, force_cpu=True)
+                                stream = container.streams.video[0]
+                                stream.thread_type = "AUTO"
+                                stream.codec_context.skip_frame = "NONREF"
+                                consecutive_failures = 0
+                                i = 0
+                                continue
                             raise AnalysisError(f"Aborting: {MAX_CONSECUTIVE_FAILURES} consecutive decode failures")
+                        i += 1
                         continue
 
                     if not frame_found:
                         logger.debug(f"[{job_id}] No frame at {target_time_sec:.2f}s, skipping")
+
+                    i += 1
 
             self.metrics["frames_extracted"] = sampled_frame_number
             self.metrics["total_extraction_time"] = time.time() - start_total
