@@ -53,6 +53,7 @@ export interface BenchmarkResponse {
     totalUsage: number
   }>
   hostname: string
+  jobs?: JobBenchmark[]
 }
 
 export interface PluginStats {
