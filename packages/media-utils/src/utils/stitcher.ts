@@ -91,11 +91,7 @@ const handleFFmpegProcess = (process: ChildProcess, operationName: string): Prom
 
 const buildVideoFilter = (dimensions: Dimensions, fps: number): string => {
   // Use appropriate scale filter based on GPU availability
-  const scaleFilter = getScaleFilter(
-    dimensions.width,
-    dimensions.height,
-    { useGPUScaling: USE_FFMPEG_GPU } // Use CPU scaling for compatibility
-  )
+  const scaleFilter = getScaleFilter(dimensions.width, dimensions.height)
 
   return [
     `${scaleFilter}:force_original_aspect_ratio=decrease`,
