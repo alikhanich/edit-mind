@@ -202,25 +202,24 @@ const createFileList = (clipPaths: string[], fileListPath: string): void => {
 }
 
 const concatenateClips = async (fileListPath: string, outputPath: string): Promise<void> => {
-  const encodingArgs = buildEncodingArgs({ encoder: 'h264' })
-
-  const args = [
-    '-f',
-    'concat',
-    '-safe',
-    '0',
-    '-i',
-    fileListPath,
+  const buildArgs = (encodingArgs: string[]) => [
+    '-f', 'concat',
+    '-safe', '0',
+    '-i', fileListPath,
     ...encodingArgs,
-    '-y',
-    outputPath,
+    '-y', outputPath,
     '-hide_banner',
-    '-loglevel',
-    'error',
+    '-loglevel', 'error',
   ]
 
-  const process = await spawnFFmpeg(args)
-  const result = await handleFFmpegProcess(process, 'concatenation')
+  let process = await spawnFFmpeg(buildArgs(buildEncodingArgs({ encoder: 'h264' })))
+  let result = await handleFFmpegProcess(process, 'concatenation')
+
+  if (result.code !== 0 && USE_FFMPEG_GPU) {
+    logger.warn(`GPU encoding failed during concatenation, retrying with CPU encoder`)
+    process = await spawnFFmpeg(buildArgs(buildEncodingArgs({ encoder: 'h264', forceGPU: false })))
+    result = await handleFFmpegProcess(process, 'concatenation CPU fallback')
+  }
 
   if (result.code !== 0 && (!fs.existsSync(outputPath) || fs.statSync(outputPath).size === 0)) {
     throw new Error(`Failed to concatenate clips: ${result.stderr || 'Unknown error'}`)
