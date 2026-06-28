@@ -31,7 +31,7 @@ export const trimVideoScenes = async (scenes: ExportedScene[], tempExportDir: st
     const buildArgs = (args: string[]) => [
       '-ss', scene.startTime.toString(),
       '-i', scene.source,
-      '-to', scene.endTime.toString(),
+      '-t', (scene.endTime - scene.startTime).toString(),
       ...args,
       '-y', clipPath,
     ]
