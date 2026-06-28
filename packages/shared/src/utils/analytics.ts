@@ -2,6 +2,16 @@ import { VideoAnalytics } from '@shared/types/analytics'
 import { Scene } from '@shared/types/scene'
 import { formatDuration } from 'date-fns'
 
+const safeParseArray = (value: string | undefined): string[] => {
+  if (!value) return []
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
 export async function getVideoAnalytics(
   videoBatchGenerator: (batchSize?: number) => AsyncGenerator<Scene>
 ): Promise<VideoAnalytics> {
@@ -37,28 +47,22 @@ export async function getVideoAnalytics(
     }
 
     // Process emotions
-    const emotions = JSON.parse(video.emotions?.toString() || '[]')
-    if (Array.isArray(emotions)) {
-      emotions.forEach((emotion: string) => {
-        emotionCounts[emotion] = (emotionCounts[emotion] || 0) + 1
-      })
-    }
+    const emotions = safeParseArray(video.emotions?.toString())
+    emotions.forEach((emotion: string) => {
+      emotionCounts[emotion] = (emotionCounts[emotion] || 0) + 1
+    })
 
     // Process faces
-    const faces = JSON.parse(video.faces?.toString() || '[]')
-    if (Array.isArray(faces)) {
-      faces.forEach((face: string) => {
-        faceOccurrences[face] = (faceOccurrences[face] || 0) + 1
-      })
-    }
+    const faces = safeParseArray(video.faces?.toString())
+    faces.forEach((face: string) => {
+      faceOccurrences[face] = (faceOccurrences[face] || 0) + 1
+    })
 
     // Process objects
-    const objects = JSON.parse(video.objects?.toString() || '[]')
-    if (Array.isArray(objects)) {
-      objects.forEach((obj: string) => {
-        objectsOccurrences[obj] = (objectsOccurrences[obj] || 0) + 1
-      })
-    }
+    const objects = safeParseArray(video.objects?.toString())
+    objects.forEach((obj: string) => {
+      objectsOccurrences[obj] = (objectsOccurrences[obj] || 0) + 1
+    })
   }
 
   return {

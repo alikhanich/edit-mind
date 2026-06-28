@@ -17,6 +17,11 @@ export function ProcessingJobDetails({ job }: ProcessingJobDetailsProps) {
   ]
 
   if (job) {
+    const totalProcessingTime = processingTimes.reduce(
+      (sum, item) => sum + (item.value != null && item.value >= 0 ? item.value : 0),
+      0
+    )
+
     const frameAnalysisPlugins = job.frameAnalysisPlugins
       ? (JSON.parse(JSON.stringify(job.frameAnalysisPlugins)) as FrameAnalysisPluginAnalysis[])
       : []
@@ -34,15 +39,25 @@ export function ProcessingJobDetails({ job }: ProcessingJobDetailsProps) {
 
         <div className="p-8 space-y-12">
           <div>
-            <h4 className="text-xs font-medium text-black/40 dark:text-white/40 uppercase tracking-wider mb-6">
-              Processing Times
-            </h4>
+            <div className="flex items-baseline justify-between mb-6">
+              <h4 className="text-xs font-medium text-black/40 dark:text-white/40 uppercase tracking-wider">
+                Processing Times
+              </h4>
+              {totalProcessingTime > 0 && (
+                <div className="flex items-baseline gap-2">
+                  <span className="text-xs text-black/40 dark:text-white/40">Total</span>
+                  <span className="text-base font-semibold text-black dark:text-white tabular-nums">
+                    {humanizeSeconds(totalProcessingTime)}
+                  </span>
+                </div>
+              )}
+            </div>
             <div className="grid grid-cols-2 gap-6">
               {processingTimes.map((item) => (
                 <div key={item.label} className="space-y-2">
                   <div className="text-xs text-black/50 dark:text-white/50">{item.label}</div>
                   <div className="text-lg font-semibold text-black dark:text-white tabular-nums">
-                    {item.value && item.value >= 0 ? humanizeSeconds(item.value) : '—'}
+                    {item.value != null && item.value >= 0 ? humanizeSeconds(item.value) : '—'}
                   </div>
                 </div>
               ))}

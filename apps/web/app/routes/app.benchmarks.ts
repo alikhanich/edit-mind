@@ -135,11 +135,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
       }))
       .sort((a, b) => b.avgDuration - a.avgDuration)
 
+    const url = new URL(request.url)
+    const includeJobs = url.searchParams.get('include') === 'jobs'
+
     const response: BenchmarkResponse = {
       totalJobs: allJobBenchmarks.length,
       stats,
       frameAnalysisPlugins,
       hostname: os.hostname(),
+      ...(includeJobs && { jobs: allJobBenchmarks }),
     }
 
     return Response.json(response)

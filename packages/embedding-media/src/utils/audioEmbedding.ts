@@ -1,12 +1,16 @@
+import { readFileSync } from 'fs'
+
 import { createVectorDbClient } from '@vector/services/client'
 
 import { AUDIO_BATCH_SIZE } from '@shared/constants/embedding'
 import { logger } from '@shared/services/logger'
-import { cleanupAudio, extractSceneAudio, hasAudioStream } from '@media-utils/utils/audio'
-import { embedSceneAudio } from '../services'
+import { cleanupAudio, extractFullAudioRaw, hasAudioStream } from '@media-utils/utils/audio'
+import { embedAudioData } from '../services'
 import type { Scene } from '@shared/types'
 import { sceneToVectorFormat } from '@vector/utils/shared'
 import { embedAudios } from '@embedding-media/services/embed'
+
+const SAMPLE_RATE = 48000
 
 export const embedAudioScenes = async (
   scenes: Scene[],
@@ -27,6 +31,16 @@ export const embedAudioScenes = async (
       return
     }
 
+    const fullAudioPath = await extractFullAudioRaw(videoFullPath, SAMPLE_RATE)
+    let fullAudio: Float32Array
+    try {
+      const buf = readFileSync(fullAudioPath)
+      const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
+      fullAudio = new Float32Array(ab)
+    } finally {
+      await cleanupAudio(fullAudioPath)
+    }
+
     const totalBatches = Math.ceil(scenes.length / AUDIO_BATCH_SIZE)
     for (let i = 0; i < scenes.length; i += AUDIO_BATCH_SIZE) {
       const batch = scenes.slice(i, i + AUDIO_BATCH_SIZE)
@@ -36,33 +50,14 @@ export const embedAudioScenes = async (
 
       const audioEmbeddingsPromise = batch.map(async (scene) => {
         try {
-          const startTime = Date.now()
+          const startSample = Math.floor(scene.startTime * SAMPLE_RATE)
+          const endSample = Math.floor(scene.endTime * SAMPLE_RATE)
+          const slice = fullAudio.slice(startSample, endSample)
 
-          const audioPath = await extractSceneAudio(scene.source, scene.startTime, scene.endTime, {
-            format: 'wav',
-            sampleRate: 48000,
-            channels: 1,
-          })
-
-          const endTime = Date.now()
-
-          logger.info(`Audio extracted in ${(endTime - startTime) / 1000}s`)
-
-          if (!audioPath) {
-            throw new Error('No audio extracted, possibly due to absence of audio stream in source')
-          }
-
-          const embedding = await embedSceneAudio(audioPath)
-          await cleanupAudio(audioPath)
-
+          const embedding = await embedAudioData(slice)
           const { metadata, id } = await sceneToVectorFormat(scene)
 
-          return {
-            id,
-            embedding,
-            metadata,
-            success: true,
-          }
+          return { id, embedding, metadata, success: true }
         } catch (error) {
           logger.error(`Failed to process audio embedding for ${scene.id}: ${error}`)
           return { id: scene.id, embedding: null, metadata: {}, success: false }
@@ -70,7 +65,6 @@ export const embedAudioScenes = async (
       })
 
       const audioEmbeddingsResults = await Promise.all(audioEmbeddingsPromise)
-
       const validAudioEmbeddings = audioEmbeddingsResults.filter((r) => r.success && r.embedding)
 
       if (validAudioEmbeddings.length === 0) {
@@ -93,7 +87,7 @@ export const embedAudioScenes = async (
       }
     }
   } catch (err) {
-    logger.error(`Error in embedScenes for ${videoFullPath}: ${err}`)
+    logger.error(`Error in embedAudioScenes for ${videoFullPath}: ${err}`)
     throw err
   }
 }

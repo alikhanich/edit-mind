@@ -91,11 +91,7 @@ const handleFFmpegProcess = (process: ChildProcess, operationName: string): Prom
 
 const buildVideoFilter = (dimensions: Dimensions, fps: number): string => {
   // Use appropriate scale filter based on GPU availability
-  const scaleFilter = getScaleFilter(
-    dimensions.width,
-    dimensions.height,
-    { useGPUScaling: USE_FFMPEG_GPU } // Use CPU scaling for compatibility
-  )
+  const scaleFilter = getScaleFilter(dimensions.width, dimensions.height)
 
   return [
     `${scaleFilter}:force_original_aspect_ratio=decrease`,
@@ -112,67 +108,64 @@ const processClip = async (
   targetFps: number
 ): Promise<void> => {
   const videoFilter = buildVideoFilter(dimensions, targetFps)
-  const encodingArgs = buildEncodingArgs({ encoder: 'h264' })
+  const gpuArgs = buildEncodingArgs({ encoder: 'h264' })
+  const cpuArgs = buildEncodingArgs({ encoder: 'h264', forceGPU: false })
+  const duration = (scene.endTime - scene.startTime).toString()
 
-  const argsWithAudio = [
-    '-ss',
-    scene.startTime.toString(),
-    '-to',
-    scene.endTime.toString(),
-    '-i',
-    scene.source,
-    '-vf',
-    videoFilter,
-    '-map',
-    '0:v:0',
-    '-map',
-    '0:a:0?',
+  const buildTrimmingArgs = (encodingArgs: string[]) => [
+    '-ss', scene.startTime.toString(),
+    '-i', scene.source,
+    '-t', duration,
+    '-vf', videoFilter,
+    '-map', '0:v:0',
+    '-map', '0:a:0?',
     ...encodingArgs,
-    '-y',
-    clipPath,
+    '-y', clipPath,
   ]
 
-  let process = await spawnFFmpeg(argsWithAudio)
-  let result = await handleFFmpegProcess(process, `clip processing (${scene.source})`)
+  const buildSilentAudioArgs = (encodingArgs: string[]) => [
+    '-ss', scene.startTime.toString(),
+    '-i', scene.source,
+    '-f', 'lavfi',
+    '-i', 'anullsrc=r=48000:cl=stereo',
+    '-t', duration,
+    '-vf', videoFilter,
+    '-map', '0:v:0',
+    '-map', '1:a:0',
+    '-shortest',
+    ...encodingArgs,
+    '-y', clipPath,
+  ]
 
+  // 1. GPU + real audio
+  let process = await spawnFFmpeg(buildTrimmingArgs(gpuArgs))
+  let result = await handleFFmpegProcess(process, `clip processing (${scene.source})`)
   if (result.code === 0) {
     logger.info(`Processed clip: ${clipPath} (GPU: ${USE_FFMPEG_GPU})`)
     return
   }
 
-  logger.warn(`Initial processing failed for ${scene.source}, retrying with silent audio`)
-
-  const argsWithSilentAudio = [
-    '-ss',
-    scene.startTime.toString(),
-    '-to',
-    scene.endTime.toString(),
-    '-i',
-    scene.source,
-    '-f',
-    'lavfi',
-    '-i',
-    'anullsrc=r=48000:cl=stereo',
-    '-vf',
-    videoFilter,
-    '-map',
-    '0:v:0',
-    '-map',
-    '1:a:0',
-    '-shortest',
-    ...encodingArgs,
-    '-y',
-    clipPath,
-  ]
-
-  process = await spawnFFmpeg(argsWithSilentAudio)
-  result = await handleFFmpegProcess(process, `clip processing retry (${scene.source})`)
-
-  if (result.code !== 0) {
-    throw new Error(`Failed to process clip from ${scene.source}: ${result.stderr || 'Unknown error'}`)
+  // 2. CPU + real audio (GPU unavailable — preserve original audio)
+  if (USE_FFMPEG_GPU) {
+    logger.warn(`GPU encoding failed for ${scene.source}, retrying with CPU encoder`)
+    process = await spawnFFmpeg(buildTrimmingArgs(cpuArgs))
+    result = await handleFFmpegProcess(process, `clip processing CPU fallback (${scene.source})`)
+    if (result.code === 0) {
+      logger.info(`Processed clip with CPU fallback: ${clipPath}`)
+      return
+    }
   }
 
-  logger.info(`Processed clip with silent audio: ${clipPath} (GPU: ${USE_FFMPEG_GPU})`)
+  // 3. CPU + silent audio (last resort — video has no audio track)
+  logger.warn(`Audio mapping failed for ${scene.source}, retrying with silent audio`)
+  process = await spawnFFmpeg(buildSilentAudioArgs(cpuArgs))
+  result = await handleFFmpegProcess(process, `clip processing silent audio fallback (${scene.source})`)
+  if (result.code === 0) {
+    logger.info(`Processed clip with silent audio fallback: ${clipPath}`)
+    return
+  }
+
+  throw new Error(`Failed to process clip from ${scene.source}: ${result.stderr || 'Unknown error'}`)
 }
 
 const createFileList = (clipPaths: string[], fileListPath: string): void => {
@@ -181,25 +174,24 @@ const createFileList = (clipPaths: string[], fileListPath: string): void => {
 }
 
 const concatenateClips = async (fileListPath: string, outputPath: string): Promise<void> => {
-  const encodingArgs = buildEncodingArgs({ encoder: 'h264' })
-
-  const args = [
-    '-f',
-    'concat',
-    '-safe',
-    '0',
-    '-i',
-    fileListPath,
+  const buildArgs = (encodingArgs: string[]) => [
+    '-f', 'concat',
+    '-safe', '0',
+    '-i', fileListPath,
     ...encodingArgs,
-    '-y',
-    outputPath,
+    '-y', outputPath,
     '-hide_banner',
-    '-loglevel',
-    'error',
+    '-loglevel', 'error',
   ]
 
-  const process = await spawnFFmpeg(args)
-  const result = await handleFFmpegProcess(process, 'concatenation')
+  let process = await spawnFFmpeg(buildArgs(buildEncodingArgs({ encoder: 'h264' })))
+  let result = await handleFFmpegProcess(process, 'concatenation')
+
+  if (result.code !== 0 && USE_FFMPEG_GPU) {
+    logger.warn(`GPU encoding failed during concatenation, retrying with CPU encoder`)
+    process = await spawnFFmpeg(buildArgs(buildEncodingArgs({ encoder: 'h264', forceGPU: false })))
+    result = await handleFFmpegProcess(process, 'concatenation CPU fallback')
+  }
 
   if (result.code !== 0 && (!fs.existsSync(outputPath) || fs.statSync(outputPath).size === 0)) {
     throw new Error(`Failed to concatenate clips: ${result.stderr || 'Unknown error'}`)
